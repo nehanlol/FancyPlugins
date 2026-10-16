@@ -95,11 +95,6 @@ tasks {
         }
     }
 
-    java {
-        withSourcesJar()
-        withJavadocJar()
-    }
-
     javadoc {
         options.encoding = Charsets.UTF_8.name()
     }
@@ -109,6 +104,12 @@ tasks {
 
         options.release.set(25)
     }
+}
+
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+    withSourcesJar()
+    withJavadocJar()
 }
 
 fun getFHVersion(): String {

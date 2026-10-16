@@ -38,6 +38,7 @@ public abstract class Hologram {
             .maximumSize(512)
             .build();
     private String lastRawText = "";
+    private java.util.List<String> lastTextList = null;
 
     protected Hologram(@NotNull final HologramData data) {
         this.data = data;
@@ -79,6 +80,16 @@ public abstract class Hologram {
      */
     @ApiStatus.Internal
     public abstract void updateFor(@NotNull final Player player);
+
+    /**
+     * Updates only the text content of the hologram for the specified player.
+     *
+     * @param player the player for whom the hologram text should be updated; must not be null
+     */
+    @ApiStatus.Internal
+    public void updateTextFor(@NotNull final Player player) {
+        updateFor(player);
+    }
 
 
     /**
@@ -179,11 +190,11 @@ public abstract class Hologram {
             return null;
         }
 
-        final String rawText = String.join("\n", textData.getText());
-
-        if (!rawText.equals(lastRawText)) {
+        final java.util.List<String> currentLines = textData.getText();
+        if (lastTextList == null || !lastTextList.equals(currentLines)) {
+            lastTextList = new java.util.ArrayList<>(currentLines);
+            lastRawText = String.join("\n", currentLines);
             cachedTextPerPlayer.invalidateAll();
-            lastRawText = rawText;
         }
 
         final UUID cacheKey = (player != null) ? player.getUniqueId() : NULL_PLAYER_KEY;
@@ -194,10 +205,10 @@ public abstract class Hologram {
         }
 
         if (Bukkit.isStopping()) {
-            return MiniMessage.miniMessage().deserialize(rawText);
+            return MiniMessage.miniMessage().deserialize(lastRawText);
         }
 
-        final Component translated = PaperColor.handler().translate(rawText, player);
+        final Component translated = PaperColor.handler().translate(lastRawText, player);
         cachedTextPerPlayer.put(cacheKey, translated);
         return translated;
     }
@@ -210,6 +221,7 @@ public abstract class Hologram {
     public void clearTextCache() {
         cachedTextPerPlayer.invalidateAll();
         lastRawText = "";
+        lastTextList = null;
     }
 
     /**

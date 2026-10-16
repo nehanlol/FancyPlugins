@@ -63,7 +63,6 @@ public final class PlayerListener implements Listener {
         FancyHologramsPlugin.get().getHologramThread().submit(() -> {
             for (final var hologram : this.plugin.getRegistry().getAll()) {
                 hologram.removeViewer(event.getPlayer().getUniqueId());
-                FancyHologramsPlugin.get().getController().refreshHologram(hologram, event.getPlayer());
             }
         });
     }
@@ -84,6 +83,9 @@ public final class PlayerListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onTeleport(@NotNull final PlayerTeleportEvent event) {
+        if (event.isCancelled()) {
+            return;
+        }
         FancyHologramsPlugin.get().getHologramThread().submit(() -> {
             for (final Hologram hologram : this.plugin.getRegistry().getAll()) {
                 FancyHologramsPlugin.get().getController().refreshHologram(hologram, event.getPlayer());

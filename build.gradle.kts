@@ -24,4 +24,20 @@ allprojects {
         maven(url = "https://artifactory.papermc.io/artifactory/releases/")
 //        maven(url = "https://jitpack.io")
     }
+
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "net.kyori" && requested.version.isNullOrEmpty()) {
+                useVersion("4.19.0")
+            }
+        }
+    }
+
+    plugins.withId("java") {
+        extensions.configure<JavaPluginExtension> {
+            toolchain {
+                languageVersion.set(JavaLanguageVersion.of(25))
+            }
+        }
+    }
 }

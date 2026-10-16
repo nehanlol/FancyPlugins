@@ -5,6 +5,7 @@ import com.fancyinnovations.fancyholograms.api.data.DisplayHologramData;
 import com.fancyinnovations.fancyholograms.api.data.HologramData;
 import com.fancyinnovations.fancyholograms.api.data.TextHologramData;
 import com.fancyinnovations.fancyholograms.api.hologram.Hologram;
+import com.fancyinnovations.fancyholograms.hologram.HologramImpl;
 import com.fancyinnovations.fancyholograms.main.FancyHologramsPlugin;
 import com.fancyinnovations.fancyholograms.util.FoliaSchedulerHelper;
 import com.google.common.cache.CacheBuilder;
@@ -80,8 +81,23 @@ public class HologramControllerImpl implements HologramController {
     @Override
     public void refreshHologram(@NotNull final Hologram hologram, @NotNull final Player player) {
         FoliaSchedulerHelper.playerScheduler(player, () -> {
-            hideHologramFrom(hologram, player);
-            showHologramTo(hologram, player);
+            boolean isVisible = hologram.isViewer(player);
+            boolean shouldSee = shouldSeeHologram(hologram, player);
+
+            if (isVisible && !shouldSee) {
+                hologram.despawnFrom(player);
+            } else if (!isVisible && shouldSee) {
+                hologram.spawnTo(player);
+
+                if (ServerSoftware.isFolia() && FancyHologramsPlugin.get().getFHConfiguration().isFoliaVisibilityFixEnabled()) {
+                    FancyHologramsPlugin.get().getHologramThread().schedule(() -> {
+                        hologram.despawnFrom(player);
+                        hologram.spawnTo(player);
+                    }, 100, TimeUnit.MILLISECONDS);
+                }
+            } else if (isVisible && shouldSee && hologram instanceof HologramImpl holoImpl) {
+                holoImpl.checkOrientationUpdate(player);
+            }
         });
     }
 
@@ -90,25 +106,40 @@ public class HologramControllerImpl implements HologramController {
     }
 
     private boolean isWithinVisibilityDistance(@NotNull final Hologram hologram, @NotNull final Player player) {
-        if (!hologram.getData().getWorldName().equals(player.getWorld().getName())) {
-            return false;
-        }
-
         final Location location = hologram.getData().getLocation();
-        if (location.getWorld() == null) {
+        final org.bukkit.World holoWorld = location.getWorld();
+        if (holoWorld != null) {
+            if (!holoWorld.equals(player.getWorld())) {
+                return false;
+            }
+        } else if (!hologram.getData().getWorldName().equals(player.getWorld().getName())) {
             return false;
         }
 
         int visibilityDistance = hologram.getData().getVisibilityDistance();
-        double distanceSquared = location.distanceSquared(player.getLocation());
+        Location playerLoc = player.getLocation();
+        double dx = location.getX() - playerLoc.getX();
+        double dy = location.getY() - playerLoc.getY();
+        double dz = location.getZ() - playerLoc.getZ();
+        double distanceSquared = dx * dx + dy * dy + dz * dz;
 
-        return distanceSquared <= visibilityDistance * visibilityDistance;
+        return distanceSquared <= (double) visibilityDistance * visibilityDistance;
     }
 
     public void initRefreshTask() {
         FancyHologramsPlugin.get().getHologramThread().scheduleWithFixedDelay(() -> {
-            for (Hologram hologram : FancyHologramsPlugin.get().getRegistry().getAll()) {
-                refreshHologram(hologram, Bukkit.getOnlinePlayers());
+            final var onlinePlayers = Bukkit.getOnlinePlayers();
+            if (onlinePlayers.isEmpty()) {
+                return;
+            }
+
+            final var holograms = FancyHologramsPlugin.get().getRegistry().getAll();
+            if (holograms.isEmpty()) {
+                return;
+            }
+
+            for (Hologram hologram : holograms) {
+                refreshHologram(hologram, onlinePlayers);
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
@@ -120,16 +151,26 @@ public class HologramControllerImpl implements HologramController {
 
         // regular update scheduler
         FancyHologramsPlugin.get().getHologramThread().scheduleWithFixedDelay(() -> {
+            final var onlinePlayers = Bukkit.getOnlinePlayers();
+            if (onlinePlayers.isEmpty()) {
+                return;
+            }
+
+            final var holograms = FancyHologramsPlugin.get().getRegistry().getAll();
+            if (holograms.isEmpty()) {
+                return;
+            }
+
             final var time = System.currentTimeMillis();
 
-            for (final var hologram : FancyHologramsPlugin.get().getRegistry().getAll()) {
+            for (final var hologram : holograms) {
                 HologramData data = hologram.getData();
 
                 if (!data.hasChanges()) {
                     continue;
                 }
 
-                for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+                for (Player onlinePlayer : onlinePlayers) {
                     FoliaSchedulerHelper.playerScheduler(onlinePlayer, () -> {
                         if (!shouldSeeHologram(hologram, onlinePlayer)) {
                             return;
@@ -151,9 +192,19 @@ public class HologramControllerImpl implements HologramController {
 
         // scheduler for updateTextInterval
         FancyHologramsPlugin.get().getHologramThread().scheduleWithFixedDelay(() -> {
+            final var onlinePlayers = Bukkit.getOnlinePlayers();
+            if (onlinePlayers.isEmpty()) {
+                return;
+            }
+
+            final var holograms = FancyHologramsPlugin.get().getRegistry().getAll();
+            if (holograms.isEmpty()) {
+                return;
+            }
+
             final var time = System.currentTimeMillis();
 
-            for (final var hologram : FancyHologramsPlugin.get().getRegistry().getAll()) {
+            for (final var hologram : holograms) {
                 if (hologram.getData() instanceof TextHologramData textData) {
                     final var interval = textData.getTextUpdateInterval();
                     if (interval < 1) {
@@ -166,13 +217,13 @@ public class HologramControllerImpl implements HologramController {
                     }
 
                     if (lastUpdate == null || time > (lastUpdate + interval)) {
-                        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+                        for (Player onlinePlayer : onlinePlayers) {
                             FoliaSchedulerHelper.playerScheduler(onlinePlayer, () -> {
                                 if (!shouldSeeHologram(hologram, onlinePlayer)) {
                                     return;
                                 }
 
-                                hologram.updateFor(onlinePlayer);
+                                hologram.updateTextFor(onlinePlayer);
                             });
                         }
 
