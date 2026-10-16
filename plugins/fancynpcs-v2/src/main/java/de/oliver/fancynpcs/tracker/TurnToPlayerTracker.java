@@ -15,11 +15,21 @@ public class TurnToPlayerTracker implements Runnable {
 
     @Override
     public void run() {
-        Collection<Npc> npcs = FancyNpcs.getInstance().getNpcManagerImpl().getAllNpcs();
-        int defaultTurnToPlayerDistance = FancyNpcs.getInstance().getFancyNpcConfig().getTurnToPlayerDistance();
+        Collection<? extends Player> onlinePlayers = Bukkit.getOnlinePlayers();
+        if (onlinePlayers.isEmpty()) {
+            return;
+        }
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            Location playerLocation = player.getLocation();
+        Collection<Npc> npcs = FancyNpcs.getInstance().getNpcManagerImpl().getAllNpcs();
+        if (npcs.isEmpty()) {
+            return;
+        }
+
+        int defaultTurnToPlayerDistance = FancyNpcs.getInstance().getFancyNpcConfig().getTurnToPlayerDistance();
+        int defaultTurnDistSq = defaultTurnToPlayerDistance * defaultTurnToPlayerDistance;
+
+        for (Player player : onlinePlayers) {
+            Location playerLocation = null;
 
             for (Npc npc : npcs) {
                 NpcData npcData = npc.getData();
@@ -28,35 +38,46 @@ public class TurnToPlayerTracker implements Runnable {
                 }
 
                 Location npcLocation = npcData.getLocation();
-
-                if (npcLocation == null || !npcLocation.getWorld().getName().equalsIgnoreCase(playerLocation.getWorld().getName())) {
+                if (npcLocation == null || player.getWorld() != npcLocation.getWorld()) {
                     continue;
                 }
 
-                double distance = playerLocation.distance(npcLocation);
-                if (Double.isNaN(distance)) {
-                    continue;
+                if (playerLocation == null) {
+                    playerLocation = player.getLocation();
                 }
+
+                double dx = playerLocation.getX() - npcLocation.getX();
+                double dy = playerLocation.getY() - npcLocation.getY();
+                double dz = playerLocation.getZ() - npcLocation.getZ();
+                double distSq = dx * dx + dy * dy + dz * dz;
 
                 // Get NPC-specific turn distance or fall back to default
                 int npcTurnDistance = npcData.getTurnToPlayerDistance();
-                int effectiveTurnDistance = (npcTurnDistance == -1) ? defaultTurnToPlayerDistance : npcTurnDistance;
+                int effectiveTurnDistSq = (npcTurnDistance == -1) ? defaultTurnDistSq : (npcTurnDistance * npcTurnDistance);
 
-                if (distance < effectiveTurnDistance) {
+                if (distSq < effectiveTurnDistSq) {
                     // Calculate the base eye height for the entity type
                     double baseEyeHeight = getEntityEyeHeight(npcData.getType());
+                    double npcEyeY = npcLocation.getY() + (baseEyeHeight * npcData.getScale());
+                    double playerEyeY = playerLocation.getY() + player.getEyeHeight();
 
-                    // Adjust the NPC location Y coordinate based on the scale
-                    Location adjustedNpcLocation = npcLocation.clone();
-                    adjustedNpcLocation.setY(npcLocation.getY() + (baseEyeHeight * npcData.getScale()));
+                    double eyeDx = dx;
+                    double eyeDy = playerEyeY - npcEyeY;
+                    double eyeDz = dz;
 
-                    // Calculate direction from adjusted NPC eye position to player eye position
-                    Location playerEyeLocation = playerLocation.clone();
-                    playerEyeLocation.setY(playerLocation.getY() + player.getEyeHeight());
+                    float yaw;
+                    float pitch;
+                    if (eyeDx == 0 && eyeDz == 0) {
+                        yaw = 0.0f;
+                        pitch = eyeDy > 0 ? -90.0f : 90.0f;
+                    } else {
+                        double theta = Math.atan2(-eyeDx, eyeDz);
+                        yaw = (float) Math.toDegrees((theta + 2 * Math.PI) % (2 * Math.PI));
+                        double xz = Math.sqrt(eyeDx * eyeDx + eyeDz * eyeDz);
+                        pitch = (float) Math.toDegrees(Math.atan2(-eyeDy, xz));
+                    }
 
-                    Location newLoc = playerEyeLocation.clone();
-                    newLoc.setDirection(newLoc.subtract(adjustedNpcLocation).toVector());
-                    npc.lookAt(player, newLoc);
+                    npc.lookAt(player, new Location(null, 0, 0, 0, yaw, pitch));
                     // Setting NPC to be looking at the player and getting the value previously stored (or not) inside a map.
                     Boolean wasPreviouslyLooking = npc.getIsLookingAtPlayer().put(player.getUniqueId(), true);
                     // Comparing the previous state with current state to prevent event from being called continuously.

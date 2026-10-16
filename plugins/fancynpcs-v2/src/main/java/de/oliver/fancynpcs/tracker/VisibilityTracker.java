@@ -5,27 +5,38 @@ import de.oliver.fancynpcs.api.Npc;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class VisibilityTracker implements Runnable {
 
-    private Set<UUID> joinDelayPlayers;
+    private final Set<UUID> joinDelayPlayers;
 
     public VisibilityTracker() {
-        this.joinDelayPlayers = new HashSet<>();
+        this.joinDelayPlayers = ConcurrentHashMap.newKeySet();
     }
 
     @Override
     public void run() {
-        for (Player player : Bukkit.getOnlinePlayers()) {
+        Collection<? extends Player> onlinePlayers = Bukkit.getOnlinePlayers();
+        if (onlinePlayers.isEmpty()) {
+            return;
+        }
+
+        Collection<Npc> npcs = FancyNpcs.getInstance().getNpcManagerImpl().getAllNpcs();
+        if (npcs.isEmpty()) {
+            return;
+        }
+
+        for (Player player : onlinePlayers) {
             if (joinDelayPlayers.contains(player.getUniqueId())) {
                 continue;
             }
 
-            for (Npc npc : FancyNpcs.getInstance().getNpcManagerImpl().getAllNpcs()) {
-                npc.checkAndUpdateVisibility(player);
+            for (Npc npc : npcs) {
+                npc.checkAndUpdateVisibilityDirect(player);
             }
         }
     }

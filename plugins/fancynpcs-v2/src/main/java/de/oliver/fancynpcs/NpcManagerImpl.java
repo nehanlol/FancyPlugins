@@ -54,7 +54,7 @@ public class NpcManagerImpl implements NpcManager {
 
     @Override
     public void registerNpc(Npc npc) {
-        if (!FancyNpcs.PLAYER_NPCS_FEATURE_FLAG.isEnabled() && getAllNpcs().stream().anyMatch(npc1 -> npc1.getData().getName().equals(npc.getData().getName()))) {
+        if (!FancyNpcs.PLAYER_NPCS_FEATURE_FLAG.isEnabled() && npcs.values().stream().anyMatch(npc1 -> npc1.getData().getName().equals(npc.getData().getName()))) {
             throw new IllegalStateException("An NPC with this name already exists");
         } else {
             npcs.put(npc.getData().getId(), npc);
@@ -77,7 +77,7 @@ public class NpcManagerImpl implements NpcManager {
     @ApiStatus.Internal
     @Override
     public Npc getNpc(int entityId) {
-        for (Npc npc : getAllNpcs()) {
+        for (Npc npc : npcs.values()) {
             if (npc.getEntityId() == entityId) {
                 return npc;
             }
@@ -88,7 +88,7 @@ public class NpcManagerImpl implements NpcManager {
 
     @Override
     public Npc getNpc(String name) {
-        for (Npc npc : getAllNpcs()) {
+        for (Npc npc : npcs.values()) {
             if (npc.getData().getName().equalsIgnoreCase(name)) {
                 return npc;
             }
@@ -104,7 +104,7 @@ public class NpcManagerImpl implements NpcManager {
 
     @Override
     public Npc getNpc(String name, UUID creator) {
-        for (Npc npc : getAllNpcs()) {
+        for (Npc npc : npcs.values()) {
             if (npc.getData().getCreator().equals(creator) && npc.getData().getName().equalsIgnoreCase(name)) {
                 return npc;
             }
@@ -115,7 +115,7 @@ public class NpcManagerImpl implements NpcManager {
 
     @Override
     public Collection<Npc> getAllNpcs() {
-        return new ArrayList<>(npcs.values());
+        return Collections.unmodifiableCollection(npcs.values());
     }
 
     @Override

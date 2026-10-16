@@ -105,16 +105,24 @@ public abstract class Npc {
             return false;
         }
 
-        if (data.getLocation() == null) {
+        Location npcLoc = data.getLocation();
+        if (npcLoc == null) {
             return false;
         }
 
-        if (player.getLocation().getWorld() != data.getLocation().getWorld()) {
+        if (player.getWorld() != npcLoc.getWorld()) {
             return false;
         }
 
-        if (visibilityDistance != Integer.MAX_VALUE && data.getLocation().distanceSquared(player.getLocation()) > visibilityDistance * visibilityDistance) {
-            return false;
+        if (visibilityDistance != Integer.MAX_VALUE) {
+            Location playerLoc = player.getLocation();
+            double dx = npcLoc.getX() - playerLoc.getX();
+            double dy = npcLoc.getY() - playerLoc.getY();
+            double dz = npcLoc.getZ() - playerLoc.getZ();
+            long maxDistSq = (long) visibilityDistance * visibilityDistance;
+            if (dx * dx + dy * dy + dz * dz > maxDistSq) {
+                return false;
+            }
         }
 
         return !fancyNpcsPlugin.getFancyNpcConfig().isSkipInvisibleNpcs()
@@ -122,26 +130,32 @@ public abstract class Npc {
                 || data.isGlowing() || !data.getEquipment().isEmpty();
     }
 
-    public void checkAndUpdateVisibility(Player player) {
-        fancyNpcsPlugin.getNpcThread().submit(() -> {
-            boolean shouldBeVisible = shouldBeVisible(player);
-            boolean wasVisible = isVisibleForPlayer.getOrDefault(player.getUniqueId(), false);
+    public void checkAndUpdateVisibilityDirect(Player player) {
+        boolean shouldBeVisible = shouldBeVisible(player);
+        boolean wasVisible = isVisibleForPlayer.getOrDefault(player.getUniqueId(), false);
 
-            if (shouldBeVisible && !wasVisible) {
-                spawn(player);
+        if (shouldBeVisible && !wasVisible) {
+            spawn(player);
 
-                // Respawn the npc to fix visibility issues on Folia
-                if (ServerSoftware.isFolia() && fancyNpcsPlugin.getFeatureFlagConfig().getFeatureFlag("enable-folia-visibility-fix").isEnabled()) {
-                    fancyNpcsPlugin.getNpcThread().schedule(() -> {
-                        remove(player);
-                        spawn(player);
-                    }, 100, TimeUnit.MILLISECONDS);
-                }
-
-            } else if (!shouldBeVisible && wasVisible) {
-                remove(player);
+            // Respawn the npc to fix visibility issues on Folia
+            if (ServerSoftware.isFolia() && fancyNpcsPlugin.getFeatureFlagConfig().getFeatureFlag("enable-folia-visibility-fix").isEnabled()) {
+                fancyNpcsPlugin.getNpcThread().schedule(() -> {
+                    remove(player);
+                    spawn(player);
+                }, 100, TimeUnit.MILLISECONDS);
             }
-        });
+
+        } else if (!shouldBeVisible && wasVisible) {
+            remove(player);
+        }
+    }
+
+    public void checkAndUpdateVisibility(Player player) {
+        if (Thread.currentThread().getName().startsWith("FancyNpcs-Npcs")) {
+            checkAndUpdateVisibilityDirect(player);
+        } else {
+            fancyNpcsPlugin.getNpcThread().submit(() -> checkAndUpdateVisibilityDirect(player));
+        }
     }
 
     public void checkAndUpdateVisibilityForAll() {

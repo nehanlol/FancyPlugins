@@ -279,6 +279,7 @@ public class FancyNpcs extends JavaPlugin implements FancyNpcsPlugin {
         pluginManager.registerEvents(new PlayerLoadedListener(), this);
 
         pluginManager.registerEvents(new PlayerUseUnknownEntityListener(), instance);
+        pluginManager.registerEvents(new NpcCommandPriorityListener(instance), instance);
 
         if (PLAYER_NPCS_FEATURE_FLAG.isEnabled()) {
             pluginManager.registerEvents(new PlayerNpcsListener(), instance);
@@ -302,7 +303,7 @@ public class FancyNpcs extends JavaPlugin implements FancyNpcsPlugin {
 
         int npcUpdateInterval = config.getNpcUpdateInterval();
         npcThread.scheduleAtFixedRate(() -> {
-            final List<Npc> npcs = new ArrayList<>(npcManager.getAllNpcs());
+            final Collection<Npc> npcs = npcManager.getAllNpcs();
             for (final Npc npc : npcs) {
                 try {
                     boolean shouldUpdate = npc.getData().getDisplayName() != null && !npc.getData().getDisplayName().isBlank() && SkinUtils.isPlaceholder(npc.getData().getDisplayName());
@@ -339,6 +340,9 @@ public class FancyNpcs extends JavaPlugin implements FancyNpcsPlugin {
                         .registerCommands();
                 fancyLogger.info("Cloud commands have been registered.");
             }
+            ensureNpcCommandPriority();
+            scheduler.runTaskLater(null, 1L, this::ensureNpcCommandPriority);
+            scheduler.runTaskLater(null, 20L, this::ensureNpcCommandPriority);
         } else {
             getLogger().warning("Commands and related components have not been registered. This can be changed by setting 'register_commands' to true, and restarting the server.");
         }
@@ -348,6 +352,45 @@ public class FancyNpcs extends JavaPlugin implements FancyNpcsPlugin {
         }
 
         fancyLogger.info("FancyNpcs (" + versionConfig.getVersion() + ") has been enabled.");
+    }
+
+    public void ensureNpcCommandPriority() {
+        try {
+            org.bukkit.command.CommandMap commandMap = Bukkit.getCommandMap();
+            Map<String, org.bukkit.command.Command> knownCommands = null;
+            if (commandMap instanceof org.bukkit.command.SimpleCommandMap scm) {
+                knownCommands = scm.getKnownCommands();
+            } else {
+                try {
+                    java.lang.reflect.Method getKnownCommands = commandMap.getClass().getMethod("getKnownCommands");
+                    @SuppressWarnings("unchecked")
+                    Map<String, org.bukkit.command.Command> map = (Map<String, org.bukkit.command.Command>) getKnownCommands.invoke(commandMap);
+                    knownCommands = map;
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (knownCommands != null) {
+                org.bukkit.command.Command fancyNpcCmd = knownCommands.get("fancynpcs:npc");
+                if (fancyNpcCmd == null) {
+                    for (Map.Entry<String, org.bukkit.command.Command> entry : knownCommands.entrySet()) {
+                        org.bukkit.command.Command cmd = entry.getValue();
+                        if (cmd instanceof org.bukkit.command.PluginIdentifiableCommand pic && pic.getPlugin() == this) {
+                            if (cmd.getName().equalsIgnoreCase("npc") || entry.getKey().equalsIgnoreCase("fancynpcs:npc")) {
+                                fancyNpcCmd = cmd;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (fancyNpcCmd != null) {
+                    knownCommands.put("npc", fancyNpcCmd);
+                }
+            }
+        } catch (Throwable t) {
+            fancyLogger.warn("Could not enforce /npc command priority: " + t.getMessage());
+        }
     }
 
     @Override
